@@ -24,6 +24,8 @@ class MIDIPiano extends Phaser.Scene {
         this.playerProgress = [];
         this.referenceKeys = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K'];
         this.gameStarted = false;
+        this.timer = null;
+        this.timeLeft = 6000; // 6 seconds in milliseconds
         this.keyMappings = {
             'A': 'C5',
             'S': 'D5',
@@ -95,6 +97,8 @@ class MIDIPiano extends Phaser.Scene {
         this.instructionsText = this.add.bitmapText(800, 150, 'FuturaBT-White', 'Presiona ESPACIO para comenzar', 24).setOrigin(0.5);
         this.explanationText = this.add.bitmapText(800, 200, 'FuturaBT-White', 'Usa las teclas A, S, D, F, G, H, J, K para tocar las notas', 20).setOrigin(0.5);
         this.explanationText.setVisible(false);
+        this.timerText = this.add.bitmapText(800, 250, 'FuturaBT-White', 'Tiempo: 6', 24).setOrigin(0.5);
+        this.timerText.setVisible(false);
         this.input.keyboard.on('keydown-SPACE', this.startGame, this);
         const blackKeyWidth = 50;
         const blackKeyHeight = 180;
@@ -287,7 +291,7 @@ class MIDIPiano extends Phaser.Scene {
                         // Reiniciar las teclas activas
                         activeKeys = {};
                     }
-                    // Prevenir que el cambio de modo active la tecla 'S'
+                    // Prevenir que el cambio de foco active la tecla 'S'
                     event.target.blur();
                 });
 
@@ -369,14 +373,14 @@ class MIDIPiano extends Phaser.Scene {
                 // AutoPlay functionality removed
 
                 function releaseAllNotes() {
+                    pressedKeys.clear();
                     synth.releaseAll();
                     for (const note in whiteKeys) {
-                        whiteKeys[note].setFillStyle(0xffffff);
+                        whiteKeys[note].setFillStyle(currentScale.includes(note.slice(0, -1)) ? 0xadd8e6 : 0xffffff);
                     }
                     for (const note in blackKeys) {
-                        blackKeys[note].setFillStyle(0x000000);
+                        blackKeys[note].setFillStyle(currentScale.includes(note.slice(0, -1)) ? 0x00008b : 0x000000);
                     }
-                    activeKeys = {};
                 }
 
                 function highlightScale(scaleNotes) {
@@ -427,52 +431,58 @@ class MIDIPiano extends Phaser.Scene {
                     }
                 });
 
+                let pressedKeys = new Set();
                 // Keyboard event listeners for keys
                 this.input.keyboard.on('keydown', event => {
-                    // Prevenir el comportamiento por defecto para evitar interacciones no deseadas
                     event.preventDefault();
-                    const isCapsLocked = event.getModifierState && event.getModifierState('CapsLock');
-                    const isShiftPressed = event.shiftKey;
                     const key = event.key.toUpperCase();
-                    let note;
-                    if (isCapsLocked) {
-                        note = this.lowerKeyMappings[key] || this.lowerBlackKeyMappings[key];
-                    } else if (isShiftPressed) {
-                        note = this.upperKeyMappings[key] || this.upperBlackKeyMappings[key];
-                    } else {
-                        note = this.keyMappings[key] || this.blackKeyMappings[key];
-                    }
-                    if (note && !activeKeys[key]) {
-                        activeKeys[key] = true; // Mark this key as active
-                        const keyObject = whiteKeys[note] || blackKeys[note];
-                        if (keyObject) {
-                            keyObject.setFillStyle(0xff0000); // Change color to red when key pressed
-                            synth.triggerAttack(note);
-                            this.checkLevelProgress(note);
+                    if (!pressedKeys.has(key)) {
+                        pressedKeys.add(key);
+                        const isCapsLocked = event.getModifierState && event.getModifierState('CapsLock');
+                        const isShiftPressed = event.shiftKey;
+                        let note;
+                        if (isCapsLocked) {
+                            note = this.lowerKeyMappings[key] || this.lowerBlackKeyMappings[key];
+                        } else if (isShiftPressed) {
+                            note = this.upperKeyMappings[key] || this.upperBlackKeyMappings[key];
+                        } else {
+                            note = this.keyMappings[key] || this.blackKeyMappings[key];
+                        }
+                        if (note) {
+                            const keyObject = whiteKeys[note] || blackKeys[note];
+                            if (keyObject) {
+                                keyObject.setFillStyle(0xff0000); // Change color to red when key pressed
+                                synth.triggerAttack(note);
+                                this.checkLevelProgress(note);
+                            }
                         }
                     }
                 });
                 this.input.keyboard.on('keyup', event => {
-                    const isCapsLocked = event.getModifierState && event.getModifierState('CapsLock');
-                    const isShiftPressed = event.shiftKey;
                     const key = event.key.toUpperCase();
-                    let note;
-                    if (isCapsLocked) {
-                        note = this.lowerKeyMappings[key] || this.lowerBlackKeyMappings[key];
-                    } else if (isShiftPressed) {
-                        note = this.upperKeyMappings[key] || this.upperBlackKeyMappings[key];
-                    } else {
-                        note = this.keyMappings[key] || this.blackKeyMappings[key];
-                    }
-                    if (note && activeKeys[key]) {
-                        delete activeKeys[key]; // Mark this key as inactive
-                        const keyObject = whiteKeys[note] || blackKeys[note];
-                        if (keyObject) {
-                            keyObject.setFillStyle(currentScale.includes(note.slice(0, -1)) ? 0xadd8e6 : (keyObject === whiteKeys[note] ? 0xffffff : 0x000000)); // Revert to appropriate color
-                            synth.triggerRelease(note);
+                    if (pressedKeys.has(key)) {
+                        pressedKeys.delete(key);
+                        const isCapsLocked = event.getModifierState && event.getModifierState('CapsLock');
+                        const isShiftPressed = event.shiftKey;
+                        let note;
+                        if (isCapsLocked) {
+                            note = this.lowerKeyMappings[key] || this.lowerBlackKeyMappings[key];
+                        } else if (isShiftPressed) {
+                            note = this.upperKeyMappings[key] || this.upperBlackKeyMappings[key];
+                        } else {
+                            note = this.keyMappings[key] || this.blackKeyMappings[key];
+                        }
+                        if (note) {
+                            const keyObject = whiteKeys[note] || blackKeys[note];
+                            if (keyObject) {
+                                keyObject.setFillStyle(currentScale.includes(note.slice(0, -1)) ? 0xadd8e6 : (keyObject === whiteKeys[note] ? 0xffffff : 0x000000)); // Revert to appropriate color
+                                synth.triggerRelease(note);
+                            }
                         }
                     }
                 });
+                // Liberar todas las notas cuando la ventana pierde el foco
+                window.addEventListener('blur', releaseAllNotes);
 
                 // Add "Powered by Tone.js" text at the bottom right corner
                 this.add.bitmapText(1580, 870, 'FuturaBT-White', 'Developed by UltraSFX', 24).setOrigin(1);
@@ -499,8 +509,118 @@ class MIDIPiano extends Phaser.Scene {
             this.gameStarted = true;
             this.instructionsText.setVisible(false);
             this.explanationText.setVisible(true);
+            this.timerText.setVisible(true);
             this.generateLevelObjective();
+            this.startTimer();
         }
+    }
+    startTimer() {
+        this.timeLeft = 6000;
+        this.updateTimerText();
+        this.timer = this.time.addEvent({
+            delay: 100,
+            callback: this.updateTimer,
+            callbackScope: this,
+            loop: true
+        });
+    }
+    updateTimer() {
+        this.timeLeft -= 100;
+        this.updateTimerText();
+        if (this.timeLeft <= 0) {
+            this.timer.remove();
+            this.timeOut();
+        }
+    }
+    updateTimerText() {
+        this.timerText.setText('Tiempo: ' + (this.timeLeft / 1000).toFixed(1));
+    }
+    timeOut() {
+        this.timer.remove();
+        this.showLoseMessage();
+    }
+    showLoseMessage() {
+        const loseText = this.add.text(800, 400, 'Perdiste', {
+            fontFamily: 'FuturaBT',
+            fontSize: '144px',
+            color: '#FF0000',
+            fontStyle: 'bold',
+            align: 'center',
+            stroke: '#FFFFFF',
+            strokeThickness: 16
+        }).setOrigin(0.5);
+        // Texto del contador
+        const countdownLabel = this.add.text(800, 600, 'Tiempo restante para jugar de nuevo:', {
+            fontFamily: 'FuturaBT',
+            fontSize: '48px',
+            color: '#FFFFFF',
+            align: 'center',
+            stroke: '#000000',
+            strokeThickness: 4
+        }).setOrigin(0.5);
+        // Contador regresivo
+        let countdown = 10;
+        const countdownText = this.add.text(800, 675, countdown.toString(), {
+            fontFamily: 'FuturaBT',
+            fontSize: '96px',
+            color: '#FF0000',
+            align: 'center',
+            stroke: '#FFFFFF',
+            strokeThickness: 8
+        }).setOrigin(0.5);
+        // Efecto de entrada para todos los textos
+        loseText.setScale(0);
+        countdownLabel.setScale(0);
+        countdownText.setScale(0);
+        this.tweens.add({
+            targets: [loseText, countdownLabel, countdownText],
+            scale: 1,
+            duration: 1000,
+            ease: 'Bounce'
+        });
+        // Actualizar el contador cada segundo
+        const countdownTimer = this.time.addEvent({
+            delay: 1000,
+            callback: () => {
+                countdown--;
+                countdownText.setText(countdown.toString());
+                if (countdown <= 0) {
+                    countdownTimer.remove();
+                }
+            },
+            repeat: 9
+        });
+        // Efecto de salida para todos los textos
+        this.time.delayedCall(9000, () => {
+            this.tweens.add({
+                targets: [loseText, countdownLabel, countdownText],
+                scale: 0,
+                duration: 1000,
+                ease: 'Back.easeIn'
+            });
+        });
+        // Reiniciar el juego después de 10 segundos
+        this.time.delayedCall(10000, () => {
+            this.currentLevel = 1;
+            this.playerProgress = [];
+            this.gameStarted = false;
+            this.scene.restart();
+        });
+    }
+    showTimeOutMessage() {
+        const timeOutText = this.add.bitmapText(800, 450, 'FuturaBT-White', '¡Tiempo agotado!', 64).setOrigin(0.5);
+        this.tweens.add({
+            targets: timeOutText,
+            alpha: {
+                from: 1,
+                to: 0
+            },
+            duration: 1500,
+            ease: 'Power2',
+            onComplete: () => {
+                timeOutText.destroy();
+            }
+        });
     }
     generateLevelObjective() {
         this.levelObjective = [];
@@ -518,13 +638,88 @@ class MIDIPiano extends Phaser.Scene {
         if (playedKey === expectedKey) {
             this.playerProgress.push(playedKey);
             if (this.playerProgress.length === this.levelObjective.length) {
+                this.timer.remove();
+                this.showCongratulation();
                 this.currentLevel++;
                 this.levelText.setText('Nivel: ' + this.currentLevel);
-                this.generateLevelObjective();
+                this.time.delayedCall(3500, () => {
+                    this.generateLevelObjective();
+                    this.startTimer();
+                });
             }
         } else {
             this.playerProgress = [];
         }
+    }
+    showCongratulation() {
+        const congratsText = this.add.text(800, 450, '¡Felicidades!\n¡Nivel completado!', {
+            font: 'bold 64px FuturaBT',
+            align: 'center',
+            stroke: '#000000',
+            strokeThickness: 6
+        });
+        congratsText.setOrigin(0.5);
+        congratsText.setAlpha(0);
+        congratsText.setScale(0.5);
+        // Añadir un fondo semi-transparente
+        const background = this.add.rectangle(800, 450, 1600, 900, 0x000000, 0.7);
+        background.setAlpha(0);
+        // Colores del arcoíris más brillantes
+        const colors = [0xFF00FF, 0xFF00FF, 0xFFFF00, 0x00FFFF, 0x00FFFF, 0xFF00FF, 0xFF00FF];
+        // Animación de aparición
+        this.tweens.add({
+            targets: [congratsText, background],
+            alpha: 1,
+            duration: 500,
+            ease: 'Power2'
+        });
+        this.tweens.add({
+            targets: congratsText,
+            scale: 1,
+            duration: 1000,
+            ease: 'Bounce'
+        });
+        // Animación del efecto arcoíris
+        this.tweens.addCounter({
+            from: 0,
+            to: colors.length - 1,
+            duration: 1000,
+            repeat: -1,
+            ease: 'Linear',
+            onUpdate: (tween) => {
+                const index = Math.floor(tween.getValue()) % colors.length;
+                const nextIndex = (index + 1) % colors.length;
+                const color1 = Phaser.Display.Color.ValueToColor(colors[index]);
+                const color2 = Phaser.Display.Color.ValueToColor(colors[nextIndex]);
+                const blendColor = Phaser.Display.Color.Interpolate.ColorWithColor(color1, color2, 100, tween.getValue() % 1);
+                congratsText.setTint(Phaser.Display.Color.GetColor(blendColor.r, blendColor.g, blendColor.b));
+            }
+        });
+        // Efecto de brillo
+        this.tweens.add({
+            targets: congratsText,
+            alpha: {
+                from: 0.7,
+                to: 1
+            },
+            yoyo: true,
+            repeat: -1,
+            duration: 750,
+            ease: 'Sine.easeInOut'
+        });
+        // Eliminar el texto y el fondo después de la animación
+        this.time.delayedCall(3500, () => {
+            this.tweens.add({
+                targets: [congratsText, background],
+                alpha: 0,
+                duration: 500,
+                ease: 'Power2',
+                onComplete: () => {
+                    congratsText.destroy();
+                    background.destroy();
+                }
+            });
+        });
     }
 }
 
